@@ -42,10 +42,5 @@ This interactive prototype demonstrates an AI-powered rescue mission orchestrati
 - Blockchain ledger simulation
 - Real-time telemetry visualization
 
-## Alignment with Problem Statement
-This prototype addresses the core requirements of:
-- EL-05: AI-Powered Autonomous Robot & Drone Swarm Mission Orchestration
-- EL-03: Intelligent and Transparent Disaster Relief Resource Allocation
-
 ## Note
 This is a high-level logic simulation demonstrating the orchestration and allocation algorithms. The production system would integrate with ROS 2, Gazebo, SLAM Toolbox, and Nav2 for real-world deployment.
