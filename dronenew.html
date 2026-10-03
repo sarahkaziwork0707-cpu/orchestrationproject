@@ -1,0 +1,877 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LiDAR-Enabled Swarm Orchestration | Disaster Relief Resource Allocation</title>
+    <style>
+        :root {
+            --bg-dark: #0a0e17;
+            --panel-bg: #111827;
+            --panel-border: #1f2937;
+            --text-main: #f9fafb;
+            --text-muted: #9ca3af;
+            --accent-blue: #3b82f6;
+            --accent-green: #10b981;
+            --accent-red: #ef4444;
+            --accent-yellow: #f59e0b;
+            --accent-purple: #8b5cf6;
+            --accent-cyan: #06b6d4;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+
+        body {
+            background-color: var(--bg-dark);
+            color: var(--text-main);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        header {
+            background-color: var(--panel-bg);
+            padding: 0.6rem 1.5rem;
+            border-bottom: 1px solid var(--panel-border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        header h1 { font-size: 0.95rem; letter-spacing: 1px; font-weight: 600; }
+        .header-left { display: flex; align-items: center; gap: 10px; }
+        .lidar-icon {
+            width: 26px; height: 26px; border-radius: 50%;
+            border: 2px solid var(--accent-cyan);
+            position: relative;
+            animation: pulse 2s infinite;
+        }
+        .lidar-icon::after {
+            content: ''; position: absolute; top: 50%; left: 50%;
+            width: 2px; height: 12px; background: var(--accent-cyan);
+            transform-origin: bottom center;
+            animation: spin 3s linear infinite;
+        }
+        @keyframes spin { from { transform: translate(-50%, -100%) rotate(0deg); } to { transform: translate(-50%, -100%) rotate(360deg); } }
+        @keyframes pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(6, 182, 212, 0.4); } 50% { box-shadow: 0 0 0 8px rgba(6, 182, 212, 0); } }
+
+        .status-badge {
+            padding: 4px 12px; border-radius: 12px; font-size: 0.7rem; font-weight: bold;
+            text-transform: uppercase; letter-spacing: 0.5px;
+        }
+        .badge-green { background: var(--accent-green); color: #000; }
+        .badge-yellow { background: var(--accent-yellow); color: #000; }
+        .badge-red { background: var(--accent-red); color: #fff; }
+
+        .dashboard-container {
+            display: grid;
+            grid-template-columns: 1fr 1.4fr 1.2fr;
+            gap: 0.6rem;
+            padding: 0.6rem;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        .panel {
+            background-color: var(--panel-bg);
+            border: 1px solid var(--panel-border);
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .panel-header {
+            padding: 0.5rem 0.8rem;
+            border-bottom: 1px solid var(--panel-border);
+            font-weight: 600;
+            font-size: 0.7rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: rgba(0,0,0,0.3);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-muted);
+        }
+
+        .panel-content {
+            padding: 0.7rem;
+            flex: 1;
+            overflow-y: auto;
+            font-size: 0.78rem;
+        }
+
+        /* Log Styles */
+        .log-entry { margin-bottom: 5px; padding-bottom: 5px; border-bottom: 1px solid var(--panel-border); }
+        .log-time { color: var(--text-muted); font-size: 0.6rem; }
+        .log-tag { font-weight: bold; margin-right: 4px; font-size: 0.68rem; }
+        .tag-orch { color: var(--accent-blue); }
+        .tag-lidar { color: var(--accent-cyan); }
+        .tag-drone { color: var(--accent-yellow); }
+        .tag-rover { color: var(--accent-green); }
+        .tag-alert { color: var(--accent-red); }
+        .tag-warn { color: var(--accent-yellow); }
+
+        /* Canvas */
+        #mapCanvas { width: 100%; height: 100%; background-color: #050810; border-radius: 4px; }
+
+        /* Resource Allocation Styles */
+        .zone-card {
+            background: #0a0e17;
+            border-left: 3px solid var(--accent-blue);
+            padding: 0.5rem 0.6rem;
+            margin-bottom: 0.5rem;
+            border-radius: 4px;
+            transition: all 0.3s;
+        }
+        .zone-card.high { border-left-color: var(--accent-red); }
+        .zone-card.medium { border-left-color: var(--accent-yellow); }
+        .zone-card.delivered { border-left-color: var(--accent-cyan); opacity: 0.7; }
+        .zone-header { display: flex; justify-content: space-between; margin-bottom: 4px; font-weight: bold; font-size: 0.72rem; }
+        .zone-detail { color: var(--text-muted); font-size: 0.68rem; display: flex; justify-content: space-between; margin-top: 2px; }
+
+        /* Inventory Bar */
+        .inventory-item {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 4px 0; border-bottom: 1px solid var(--panel-border);
+            font-size: 0.7rem;
+        }
+        .inv-bar {
+            width: 60px; height: 6px; background: #1f2937; border-radius: 3px; overflow: hidden;
+        }
+        .inv-fill { height: 100%; background: var(--accent-green); transition: width 0.5s; }
+        .inv-fill.low { background: var(--accent-red); }
+
+        /* Ledger */
+        .ledger-entry {
+            font-family: 'Courier New', monospace;
+            font-size: 0.6rem;
+            background: #000;
+            padding: 4px;
+            margin-bottom: 3px;
+            border-radius: 3px;
+            border: 1px solid var(--panel-border);
+            word-break: break-all;
+            animation: fadeIn 0.5s;
+        }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
+        .ledger-hash { color: var(--accent-yellow); }
+
+        /* Controls */
+        .controls {
+            padding: 0.6rem;
+            background: var(--panel-bg);
+            border-top: 1px solid var(--panel-border);
+            display: flex;
+            justify-content: center;
+            gap: 0.6rem;
+        }
+        button {
+            background: var(--accent-blue);
+            color: white;
+            border: none;
+            padding: 7px 14px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.2s;
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        button:hover:not(:disabled) { background: #2563eb; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3); }
+        button:disabled { background: #374151; cursor: not-allowed; opacity: 0.5; }
+        button.danger { background: var(--accent-red); }
+        button.danger:hover:not(:disabled) { background: #dc2626; }
+        button.green { background: var(--accent-green); }
+        button.green:hover:not(:disabled) { background: #059669; }
+
+        ::-webkit-scrollbar { width: 5px; }
+        ::-webkit-scrollbar-track { background: var(--bg-dark); }
+        ::-webkit-scrollbar-thumb { background: var(--panel-border); border-radius: 3px; }
+
+        .legend {
+            display: flex; gap: 8px; font-size: 0.55rem; color: var(--text-muted);
+            padding: 3px 8px; border-top: 1px solid var(--panel-border);
+            background: rgba(0,0,0,0.2);
+        }
+        .legend-item { display: flex; align-items: center; gap: 3px; }
+        .legend-dot { width: 8px; height: 8px; border-radius: 2px; }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div class="header-left">
+            <div class="lidar-icon"></div>
+            <h1>LiDAR-Enabled Swarm Orchestration <span style="color:var(--text-muted); font-weight: 400;">|</span> Collaborative Infrastructure Mapping & Resource Allocation</h1>
+        </div>
+        <div class="status-badge badge-green" id="systemStatus">System Online</div>
+    </header>
+
+    <div class="dashboard-container">
+        
+        <!-- LEFT: ORCHESTRATOR -->
+        <div class="panel">
+            <div class="panel-header">
+                <span>Mission Orchestrator (AI Reasoning)</span>
+                <span style="color: var(--accent-blue);" id="missionStatus">Active</span>
+            </div>
+            <div class="panel-content" id="swarmLog"></div>
+        </div>
+
+        <!-- CENTER: MAP -->
+        <div class="panel">
+            <div class="panel-header">
+                <span>Collaborative Infrastructure Map (LiDAR-SLAM Output)</span>
+                <span id="mapStatus" style="color: var(--accent-green);">All Systems Nominal</span>
+            </div>
+            <div class="panel-content" style="padding: 0; position: relative;">
+                <canvas id="mapCanvas"></canvas>
+                <div class="legend">
+                    <div class="legend-item"><div class="legend-dot" style="background:#3b82f6;"></div> Base</div>
+                    <div class="legend-item"><div class="legend-dot" style="background:#06b6d4;"></div> Free Space</div>
+                    <div class="legend-item"><div class="legend-dot" style="background:#ef4444;"></div> Debris</div>
+                    <div class="legend-item"><div class="legend-dot" style="background:#f59e0b;"></div> Unexplored</div>
+                    <div class="legend-item"><div class="legend-dot" style="background:#8b5cf6;"></div> Relay Coverage</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- RIGHT: RESOURCE ALLOCATION APP -->
+        <div class="panel">
+            <div class="panel-header">
+                <span>Resource Allocation & Transparency App</span>
+                <span style="color: var(--accent-green);" id="ledgerStatus">Ledger Synced</span>
+            </div>
+            <div class="panel-content">
+                
+                <!-- INVENTORY -->
+                <div style="margin-bottom: 0.6rem; font-weight: 600; font-size: 0.75rem; border-bottom: 1px solid #1f2937; padding-bottom: 4px; color: var(--accent-blue);">Base Inventory</div>
+                <div id="inventoryContainer">
+                    <div class="inventory-item">
+                        <span>Medical Kits</span>
+                        <div style="display:flex; align-items:center; gap:6px;">
+                            <div class="inv-bar"><div class="inv-fill" id="inv-med" style="width:100%"></div></div>
+                            <span id="inv-med-text" style="font-size:0.65rem; color:var(--text-muted);">100</span>
+                        </div>
+                    </div>
+                    <div class="inventory-item">
+                        <span>Food Packets</span>
+                        <div style="display:flex; align-items:center; gap:6px;">
+                            <div class="inv-bar"><div class="inv-fill" id="inv-food" style="width:100%"></div></div>
+                            <span id="inv-food-text" style="font-size:0.65rem; color:var(--text-muted);">80</span>
+                        </div>
+                    </div>
+                    <div class="inventory-item">
+                        <span>Water (L)</span>
+                        <div style="display:flex; align-items:center; gap:6px;">
+                            <div class="inv-bar"><div class="inv-fill" id="inv-water" style="width:100%"></div></div>
+                            <span id="inv-water-text" style="font-size:0.65rem; color:var(--text-muted);">120</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ACTIVE ALLOCATIONS -->
+                <div style="margin-top: 0.8rem; margin-bottom: 0.6rem; font-weight: 600; font-size: 0.75rem; border-bottom: 1px solid #1f2937; padding-bottom: 4px; color: var(--accent-blue);">Dynamic Allocations</div>
+                <div id="allocationContainer"></div>
+
+                <!-- LEDGER -->
+                <div style="margin-top: 0.8rem; margin-bottom: 0.6rem; font-weight: 600; font-size: 0.75rem; border-bottom: 1px solid #1f2937; padding-bottom: 4px; color: var(--accent-blue);">Transparent Ledger</div>
+                <div id="ledgerContainer"></div>
+            </div>
+        </div>
+
+    </div>
+
+    <div class="controls">
+        <button id="btnDisaster" onclick="triggerDisaster()">Simulate Debris (Blocked Route)</button>
+        <button id="btnBattery" onclick="triggerBatterySwap()">Simulate Battery Depletion</button>
+        <button id="btnDemand" class="green" onclick="triggerNewDemand()">Simulate New High-Priority Demand</button>
+        <button id="btnReset" class="danger" onclick="resetSimulation()">Reset Simulation</button>
+    </div>
+
+    <script>
+        // ============================================================
+        // GLOBAL STATE
+        // ============================================================
+        let agents = [];
+        let isDisasterTriggered = false;
+        let isBatteryTriggered = false;
+        let animationFrameId;
+        let baseStation = { x: 60, y: 200 };
+        let lidarMap = [];
+
+        // RESOURCE ALLOCATION ENGINE DATA
+        let inventory = {
+            medical: 100,
+            food: 80,
+            water: 120
+        };
+
+        let zones = [
+            { id: 'Sector 4', priority: 'HIGH', demand: { medical: 50, food: 0, water: 0 }, status: 'PENDING', allocated: false, delivered: false, x: 0.7, y: 0.3 },
+            { id: 'Sector 7', priority: 'MEDIUM', demand: { medical: 0, food: 30, water: 50 }, status: 'PENDING', allocated: false, delivered: false, x: 0.5, y: 0.6 }
+        ];
+
+        const canvas = document.getElementById('mapCanvas');
+        const ctx = canvas.getContext('2d');
+
+        function resizeCanvas() {
+            canvas.width = canvas.parentElement.clientWidth;
+            canvas.height = canvas.parentElement.clientHeight;
+            baseStation.x = 60;
+            baseStation.y = canvas.height / 2;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        // ============================================================
+        // AGENT CLASS
+        // ============================================================
+        class Agent {
+            constructor(id, type, x, y, color, role) {
+                this.id = id;
+                this.type = type;
+                this.x = x;
+                this.y = y;
+                this.startX = x;
+                this.startY = y;
+                this.targetX = x;
+                this.targetY = y;
+                this.color = color;
+                this.speed = type === 'drone' ? 1.8 : 1.0;
+                this.status = 'IDLE';
+                this.role = role;
+                this.battery = 100;
+                this.commsRange = 180;
+                this.lidarRange = type === 'drone' ? 100 : 70;
+                this.payload = 0;
+                this.trail = [];
+            }
+
+            move() {
+                if (this.status === 'MOVING' || this.status === 'RE-ROUTING') {
+                    const dx = this.targetX - this.x;
+                    const dy = this.targetY - this.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+
+                    if (distance > 2) {
+                        this.x += (dx / distance) * this.speed;
+                        this.y += (dy / distance) * this.speed;
+                        this.battery -= 0.06;
+                        this.trail.push({ x: this.x, y: this.y, alpha: 1 });
+                        if (this.trail.length > 30) this.trail.shift();
+                    } else {
+                        this.x = this.targetX;
+                        this.y = this.targetY;
+                        this.status = 'ARRIVED';
+                        orchestrator.onAgentArrival(this);
+                    }
+                }
+            }
+
+            draw() {
+                this.trail.forEach((point) => {
+                    ctx.beginPath();
+                    ctx.arc(point.x, point.y, 1.5, 0, Math.PI * 2);
+                    ctx.fillStyle = `rgba(6, 182, 212, ${point.alpha * 0.3})`;
+                    ctx.fill();
+                });
+
+                if (this.type === 'drone' && this.role === 'RECON') {
+                    ctx.beginPath();
+                    ctx.arc(this.x, this.y, this.lidarRange, 0, Math.PI * 2);
+                    ctx.strokeStyle = 'rgba(6, 182, 212, 0.1)';
+                    ctx.lineWidth = 1;
+                    ctx.stroke();
+                }
+
+                if (this.type === 'drone' && (this.role === 'RELAY' || this.role === 'ACTIVE_RELAY')) {
+                    ctx.beginPath();
+                    ctx.arc(this.x, this.y, this.commsRange, 0, Math.PI * 2);
+                    ctx.strokeStyle = 'rgba(139, 92, 246, 0.12)';
+                    ctx.lineWidth = 1;
+                    ctx.stroke();
+                }
+
+                ctx.beginPath();
+                if (this.type === 'drone') {
+                    ctx.moveTo(this.x, this.y - 9);
+                    ctx.lineTo(this.x - 6, this.y + 6);
+                    ctx.lineTo(this.x + 6, this.y + 6);
+                    ctx.closePath();
+                } else {
+                    ctx.rect(this.x - 6, this.y - 6, 12, 12);
+                }
+                ctx.fillStyle = this.color;
+                ctx.fill();
+                ctx.strokeStyle = '#fff';
+                ctx.lineWidth = 1;
+                ctx.stroke();
+
+                ctx.fillStyle = '#fff';
+                ctx.font = '8px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText(`${this.id}`, this.x, this.y - 14);
+                ctx.fillStyle = this.color;
+                ctx.font = '7px Arial';
+                ctx.fillText(`[${this.role}]`, this.x, this.y - 6);
+
+                ctx.fillStyle = '#1f2937';
+                ctx.fillRect(this.x - 10, this.y + 10, 20, 3);
+                ctx.fillStyle = this.battery > 30 ? '#10b981' : '#ef4444';
+                ctx.fillRect(this.x - 10, this.y + 10, (this.battery / 100) * 20, 3);
+
+                ctx.textAlign = 'left';
+            }
+        }
+
+        // ============================================================
+        // ORCHESTRATOR (AI Reasoning + Resource Allocation)
+        // ============================================================
+        const orchestrator = {
+            init() {
+                agents = [
+                    new Agent('DR-01', 'drone', 60, 60, '#06b6d4', 'RECON'),
+                    new Agent('DR-02', 'drone', 60, 120, '#8b5cf6', 'RELAY'),
+                    new Agent('DR-03', 'drone', 60, 180, '#f59e0b', 'CARGO'),
+                    new Agent('DR-04', 'drone', 60, 240, '#f59e0b', 'CARGO'),
+                    new Agent('DR-05', 'drone', 60, 300, '#6b7280', 'RESERVE'),
+                    new Agent('RV-01', 'rover', 60, 360, '#10b981', 'DELIVERY')
+                ];
+
+                agents[0].targetX = canvas.width - 100; agents[0].targetY = 80;
+                agents[0].status = 'MOVING';
+                agents[1].targetX = canvas.width / 2; agents[1].targetY = 100;
+                agents[1].status = 'MOVING';
+                agents[2].targetX = canvas.width - 150; agents[2].targetY = 200;
+                agents[2].status = 'MOVING';
+                agents[3].targetX = canvas.width - 150; agents[3].targetY = 240;
+                agents[3].status = 'MOVING';
+                agents[4].targetX = 60; agents[4].targetY = 300;
+                agents[4].status = 'IDLE';
+                agents[5].targetX = canvas.width - 150; agents[5].targetY = 320;
+                agents[5].status = 'MOVING';
+
+                isDisasterTriggered = false;
+                isBatteryTriggered = false;
+                lidarMap = [];
+
+                // Reset inventory
+                inventory = { medical: 100, food: 80, water: 120 };
+                zones.forEach(z => { z.allocated = false; z.delivered = false; z.status = 'PENDING'; });
+
+                for (let i = 0; i < 200; i++) {
+                    lidarMap.push({
+                        x: Math.random() * canvas.width,
+                        y: Math.random() * canvas.height,
+                        type: 'free',
+                        alpha: 0.15
+                    });
+                }
+
+                document.getElementById('systemStatus').className = 'status-badge badge-green';
+                document.getElementById('systemStatus').innerText = 'System Online';
+                document.getElementById('missionStatus').innerText = 'Active';
+                document.getElementById('missionStatus').style.color = 'var(--accent-blue)';
+                document.getElementById('mapStatus').innerText = 'All Systems Nominal';
+                document.getElementById('mapStatus').style.color = 'var(--accent-green)';
+                document.getElementById('btnDisaster').disabled = false;
+                document.getElementById('btnBattery').disabled = false;
+                document.getElementById('btnDemand').disabled = false;
+
+                document.getElementById('swarmLog').innerHTML = '';
+                document.getElementById('ledgerContainer').innerHTML = `
+                    <div class="ledger-entry"><span class="ledger-hash">HASH: 0x8f...3a2</span><br>Block #1042: Initial inventory verified. 100 Medical Kits, 80 Food, 120 Water.</div>
+                `;
+
+                this.updateInventoryUI();
+                this.updateAllocationUI();
+
+                this.log("ORCHESTRATOR", "Mission initialized. Evaluating resource demand across Sectors 4 and 7.");
+                this.log("LIDAR-RECON", "LiDAR-SLAM system online. Generating initial infrastructure map.");
+                this.log("ORCHESTRATOR", "Resource allocation engine active. Base inventory: 100 Medical, 80 Food, 120 Water.");
+            },
+
+            log(tag, message) {
+                const logDiv = document.getElementById('swarmLog');
+                const entry = document.createElement('div');
+                entry.className = 'log-entry';
+                const time = new Date().toLocaleTimeString();
+
+                let tagClass = 'tag-orch';
+                if (tag.includes('DR-') || tag === 'LIDAR-RECON') tagClass = 'tag-lidar';
+                if (tag.includes('RV-')) tagClass = 'tag-rover';
+                if (tag === 'ALERT') tagClass = 'tag-alert';
+                if (tag === 'WARN') tagClass = 'tag-warn';
+
+                entry.innerHTML = `<div class="log-time">${time}</div><span class="log-tag ${tagClass}">[${tag}]</span> ${message}`;
+                logDiv.appendChild(entry);
+                logDiv.scrollTop = logDiv.scrollHeight;
+            },
+
+            updateInventoryUI() {
+                const updateBar = (id, value, max) => {
+                    const percent = (value / max) * 100;
+                    const bar = document.getElementById(id);
+                    const text = document.getElementById(id + '-text');
+                    if (bar) bar.style.width = percent + '%';
+                    if (bar) bar.className = 'inv-fill' + (percent < 30 ? ' low' : '');
+                    if (text) text.innerText = value;
+                };
+                updateBar('inv-med', inventory.medical, 100);
+                updateBar('inv-food', inventory.food, 80);
+                updateBar('inv-water', inventory.water, 120);
+            },
+
+            updateAllocationUI() {
+                const container = document.getElementById('allocationContainer');
+                container.innerHTML = '';
+                
+                zones.forEach(zone => {
+                    const card = document.createElement('div');
+                    card.className = `zone-card ${zone.priority === 'HIGH' ? 'high' : 'medium'} ${zone.delivered ? 'delivered' : ''}`;
+                    
+                    let statusText = zone.status;
+                    let statusColor = 'var(--accent-blue)';
+                    if (zone.status === 'ALLOCATED') { statusText = 'IN TRANSIT'; statusColor = 'var(--accent-green)'; }
+                    if (zone.status === 'DELAYED') { statusText = 'RE-ROUTING'; statusColor = 'var(--accent-yellow)'; }
+                    if (zone.status === 'DELIVERED') { statusText = 'DELIVERED'; statusColor = 'var(--accent-cyan)'; }
+                    if (zone.status === 'PENDING') { statusText = 'PENDING'; statusColor = 'var(--text-muted)'; }
+
+                    let demandText = [];
+                    if (zone.demand.medical > 0) demandText.push(`${zone.demand.medical} Medical`);
+                    if (zone.demand.food > 0) demandText.push(`${zone.demand.food} Food`);
+                    if (zone.demand.water > 0) demandText.push(`${zone.demand.water} Water`);
+
+                    card.innerHTML = `
+                        <div class="zone-header">
+                            <span>${zone.id} <span style="color:${zone.priority === 'HIGH' ? 'var(--accent-red)' : 'var(--accent-yellow)'}; font-size:0.6rem;">[${zone.priority}]</span></span>
+                            <span style="color: ${statusColor};">${statusText}</span>
+                        </div>
+                        <div class="zone-detail"><span>Demand:</span><span>${demandText.join(', ') || 'None'}</span></div>
+                        <div class="zone-detail"><span>Allocated:</span><span>${zone.allocated ? 'Yes' : 'No'}</span></div>
+                    `;
+                    container.appendChild(card);
+                });
+            },
+
+            onAgentArrival(agent) {
+                if (agent.id === 'RV-01') {
+                    const sector4 = zones.find(z => z.id === 'Sector 4');
+                    if (sector4 && !sector4.delivered) {
+                        sector4.delivered = true;
+                        sector4.status = 'DELIVERED';
+                        this.log("ORCHESTRATOR", "Rover RV-01 has arrived at Sector 4. 50 Medical Kits delivered.");
+                        this.addLedgerEntry("Block #1043: 50 Medical Kits verified as delivered to Sector 4. Signed by RV-01.");
+                        this.updateAllocationUI();
+                        document.getElementById('systemStatus').className = 'status-badge badge-green';
+                        document.getElementById('systemStatus').innerText = 'Delivery Complete';
+                        document.getElementById('mapStatus').innerText = 'Sector 4 Supplied';
+                        document.getElementById('mapStatus').style.color = 'var(--accent-cyan)';
+                    }
+                }
+            },
+
+            addLedgerEntry(message) {
+                const ledgerDiv = document.getElementById('ledgerContainer');
+                const entry = document.createElement('div');
+                entry.className = 'ledger-entry';
+                const randomHash = '0x' + Math.random().toString(16).substr(2, 6) + '...' + Math.random().toString(16).substr(2, 3);
+                entry.innerHTML = `<span class="ledger-hash">HASH: ${randomHash}</span><br>${message}`;
+                ledgerDiv.prepend(entry);
+            },
+
+            // ============================================================
+            // RESOURCE ALLOCATION ALGORITHM
+            // ============================================================
+            allocateResources() {
+                // 1. Calculate priority score for each zone
+                // Score = (Priority Weight * Demand) + (Distance Factor)
+                // Higher score = more urgent
+                
+                let pendingZones = zones.filter(z => !z.allocated && !z.delivered);
+                if (pendingZones.length === 0) return;
+
+                // Sort by priority (HIGH first)
+                pendingZones.sort((a, b) => {
+                    if (a.priority === 'HIGH' && b.priority !== 'HIGH') return -1;
+                    if (a.priority !== 'HIGH' && b.priority === 'HIGH') return 1;
+                    return 0;
+                });
+
+                const targetZone = pendingZones[0];
+
+                // 2. Check if inventory is sufficient
+                let canAllocate = true;
+                let allocationDetails = [];
+
+                for (let [key, value] of Object.entries(targetZone.demand)) {
+                    if (value > 0) {
+                        if (inventory[key] >= value) {
+                            allocationDetails.push(`${value} ${key}`);
+                        } else {
+                            canAllocate = false;
+                            this.log("ORCHESTRATOR", `Insufficient ${key} for ${targetZone.id}. Available: ${inventory[key]}, Required: ${value}.`, "WARN");
+                        }
+                    }
+                }
+
+                if (canAllocate) {
+                    // 3. Deduct from inventory
+                    for (let [key, value] of Object.entries(targetZone.demand)) {
+                        if (value > 0) {
+                            inventory[key] -= value;
+                        }
+                    }
+
+                    targetZone.allocated = true;
+                    targetZone.status = 'ALLOCATED';
+                    
+                    this.log("ORCHESTRATOR", `Resource Allocation: ${allocationDetails.join(', ')} allocated to ${targetZone.id} (${targetZone.priority} Priority).`);
+                    this.updateInventoryUI();
+                    this.updateAllocationUI();
+                    this.addLedgerEntry(`Block #1043: ${allocationDetails.join(', ')} allocated to ${targetZone.id}. Inventory updated.`);
+                }
+            },
+
+            update() {
+                // LiDAR Scanning
+                agents.forEach(agent => {
+                    if (agent.status === 'MOVING' || agent.status === 'RE-ROUTING') {
+                        for (let i = 0; i < 3; i++) {
+                            const angle = Math.random() * Math.PI * 2;
+                            const dist = Math.random() * agent.lidarRange;
+                            lidarMap.push({
+                                x: agent.x + Math.cos(angle) * dist,
+                                y: agent.y + Math.sin(angle) * dist,
+                                type: Math.random() > 0.9 ? 'unexplored' : 'free',
+                                alpha: 0.4
+                            });
+                        }
+                    }
+                });
+                if (lidarMap.length > 500) lidarMap = lidarMap.slice(-500);
+
+                // Battery Management
+                const activeDrones = agents.filter(a => a.type === 'drone' && a.role !== 'RESERVE' && a.role !== 'IDLE' && a.role !== 'RETURNING');
+                const reserveDrone = agents.find(a => a.id === 'DR-05');
+                if (reserveDrone && reserveDrone.role === 'RESERVE' && isBatteryTriggered) {
+                    const lowBatteryDrone = activeDrones.find(a => a.battery < 20);
+                    if (lowBatteryDrone) {
+                        this.log("ORCHESTRATOR", `Battery critical on ${lowBatteryDrone.id}. Re-tasking DR-05.`);
+                        reserveDrone.role = lowBatteryDrone.role;
+                        reserveDrone.targetX = lowBatteryDrone.targetX;
+                        reserveDrone.targetY = lowBatteryDrone.targetY;
+                        reserveDrone.status = 'MOVING';
+                        lowBatteryDrone.role = 'RETURNING';
+                        lowBatteryDrone.color = '#ef4444';
+                        lowBatteryDrone.targetX = baseStation.x;
+                        lowBatteryDrone.targetY = baseStation.y;
+                        lowBatteryDrone.status = 'MOVING';
+                        isBatteryTriggered = false;
+                    }
+                }
+
+                // Communication Relay
+                const rover = agents.find(a => a.id === 'RV-01');
+                const relayDrone = agents.find(a => a.id === 'DR-02');
+                if (rover && relayDrone && relayDrone.role === 'RELAY' && !isDisasterTriggered) {
+                    const distanceToBase = Math.sqrt(Math.pow(rover.x - baseStation.x, 2) + Math.pow(rover.y - baseStation.y, 2));
+                    if (distanceToBase > 250 && relayDrone.status !== 'MOVING') {
+                        relayDrone.role = 'ACTIVE_RELAY';
+                        relayDrone.targetX = (rover.x + baseStation.x) / 2;
+                        relayDrone.targetY = (rover.y + baseStation.y) / 2;
+                        relayDrone.status = 'MOVING';
+                        this.log("DR-02", "Rover moving out of range. Repositioning to maintain communication link.");
+                    }
+                }
+            }
+        };
+
+        // ============================================================
+        // ANIMATION LOOP
+        // ============================================================
+        function animate() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            ctx.strokeStyle = '#111827';
+            ctx.lineWidth = 0.5;
+            for (let i = 0; i < canvas.width; i += 40) { ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, canvas.height); ctx.stroke(); }
+            for (let i = 0; i < canvas.height; i += 40) { ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(canvas.width, i); ctx.stroke(); }
+
+            // Draw LiDAR Map
+            lidarMap.forEach(point => {
+                ctx.beginPath();
+                ctx.arc(point.x, point.y, 1.5, 0, Math.PI * 2);
+                if (point.type === 'free') ctx.fillStyle = `rgba(6, 182, 212, ${point.alpha})`;
+                else if (point.type === 'unexplored') ctx.fillStyle = `rgba(245, 158, 11, ${point.alpha})`;
+                else ctx.fillStyle = `rgba(239, 68, 68, ${point.alpha})`;
+                ctx.fill();
+            });
+
+            // Draw Base
+            ctx.fillStyle = '#3b82f6';
+            ctx.fillRect(baseStation.x - 10, baseStation.y - 10, 20, 20);
+            ctx.fillStyle = '#fff';
+            ctx.font = '9px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('BASE', baseStation.x, baseStation.y - 14);
+
+            // Draw Sector 4 (Target)
+            const s4 = zones.find(z => z.id === 'Sector 4');
+            if (s4) {
+                ctx.fillStyle = s4.delivered ? 'rgba(6, 182, 212, 0.2)' : 'rgba(239, 68, 68, 0.2)';
+                ctx.beginPath();
+                ctx.arc(canvas.width * 0.7, canvas.height * 0.3, 30, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.strokeStyle = s4.delivered ? '#06b6d4' : '#ef4444';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+                ctx.fillStyle = '#fff';
+                ctx.font = 'bold 9px Arial';
+                ctx.fillText('SECTOR 4', canvas.width * 0.7, canvas.height * 0.3 - 35);
+            }
+
+            // Draw Sector 7 (Secondary Target)
+            const s7 = zones.find(z => z.id === 'Sector 7');
+            if (s7) {
+                ctx.fillStyle = 'rgba(245, 158, 11, 0.15)';
+                ctx.beginPath();
+                ctx.arc(canvas.width * 0.5, canvas.height * 0.65, 25, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.strokeStyle = '#f59e0b';
+                ctx.lineWidth = 1.5;
+                ctx.stroke();
+                ctx.fillStyle = '#fff';
+                ctx.font = 'bold 8px Arial';
+                ctx.fillText('SECTOR 7', canvas.width * 0.5, canvas.height * 0.65 - 30);
+            }
+
+            // Draw Debris
+            if (isDisasterTriggered) {
+                ctx.fillStyle = 'rgba(239, 68, 68, 0.3)';
+                ctx.fillRect(canvas.width / 2 - 50, 120, 100, 100);
+                ctx.strokeStyle = '#ef4444';
+                ctx.lineWidth = 2;
+                ctx.strokeRect(canvas.width / 2 - 50, 120, 100, 100);
+                ctx.fillStyle = '#ef4444';
+                ctx.font = 'bold 11px Arial';
+                ctx.fillText('DEBRIS DETECTED', canvas.width / 2, 110);
+            }
+
+            orchestrator.update();
+
+            agents.forEach(agent => {
+                agent.move();
+                agent.draw();
+            });
+
+            animationFrameId = requestAnimationFrame(animate);
+        }
+
+        // ============================================================
+        // EVENT TRIGGERS
+        // ============================================================
+        function triggerDisaster() {
+            if (isDisasterTriggered) return;
+            isDisasterTriggered = true;
+
+            document.getElementById('systemStatus').className = 'status-badge badge-yellow';
+            document.getElementById('systemStatus').innerText = 'Dynamic Re-planning';
+            document.getElementById('missionStatus').innerText = 'Re-planning';
+            document.getElementById('mapStatus').innerText = 'Debris Detected!';
+            document.getElementById('mapStatus').style.color = 'var(--accent-red)';
+            document.getElementById('btnDisaster').disabled = true;
+
+            for (let i = 0; i < 50; i++) {
+                lidarMap.push({ x: canvas.width / 2 - 50 + Math.random() * 100, y: 120 + Math.random() * 100, type: 'debris', alpha: 0.6 });
+            }
+
+            orchestrator.log("LIDAR-RECON", "CRITICAL: Point cloud detects debris blocking primary route to Sector 4.", "ALERT");
+
+            setTimeout(() => {
+                orchestrator.log("ORCHESTRATOR", "Analyzing new LiDAR data... Re-routing Rover to avoid debris.", "WARN");
+                const rover = agents.find(a => a.id === 'RV-01');
+                if (rover) {
+                    rover.status = 'RE-ROUTING';
+                    rover.color = 'var(--accent-yellow)';
+                    rover.targetX = canvas.width - 150;
+                    rover.targetY = 350;
+                }
+                const reconDrone = agents.find(a => a.id === 'DR-01');
+                if (reconDrone) {
+                    reconDrone.targetX = canvas.width - 100;
+                    reconDrone.targetY = 300;
+                    reconDrone.status = 'MOVING';
+                    orchestrator.log("ORCHESTRATOR", "Re-tasking DR-01 to scout the new route.");
+                }
+                const relayDrone = agents.find(a => a.id === 'DR-02');
+                if (relayDrone) {
+                    relayDrone.targetX = canvas.width / 2;
+                    relayDrone.targetY = 300;
+                    relayDrone.status = 'MOVING';
+                    orchestrator.log("ORCHESTRATOR", "Re-tasking DR-02 to provide comms coverage for detour.");
+                }
+                const s4 = zones.find(z => z.id === 'Sector 4');
+                if (s4) { s4.status = 'DELAYED'; orchestrator.updateAllocationUI(); }
+            }, 1500);
+
+            setTimeout(() => {
+                orchestrator.log("ORCHESTRATOR", "Re-route successful. Rover back on track to Sector 4.");
+                const rover = agents.find(a => a.id === 'RV-01');
+                if (rover) rover.color = 'var(--accent-green)';
+                const s4 = zones.find(z => z.id === 'Sector 4');
+                if (s4) { s4.status = 'ALLOCATED'; orchestrator.updateAllocationUI(); }
+            }, 5000);
+        }
+
+        function triggerBatterySwap() {
+            if (isBatteryTriggered) return;
+            isBatteryTriggered = true;
+            const targetDrone = agents.find(a => a.id === 'DR-01');
+            if (targetDrone) {
+                targetDrone.battery = 15;
+                orchestrator.log("ORCHESTRATOR", "Battery warning: DR-01 at 15%. Initiating reserve swap protocol.", "WARN");
+                document.getElementById('systemStatus').className = 'status-badge badge-yellow';
+                document.getElementById('systemStatus').innerText = 'Battery Critical';
+            }
+        }
+
+        function triggerNewDemand() {
+            // Simulate a new high-priority demand from a new zone
+            const newZone = {
+                id: 'Sector 9',
+                priority: 'HIGH',
+                demand: { medical: 20, food: 0, water: 30 },
+                status: 'PENDING',
+                allocated: false,
+                delivered: false,
+                x: 0.3,
+                y: 0.8
+            };
+            zones.push(newZone);
+            orchestrator.log("ORCHESTRATOR", "NEW DEMAND: Sector 9 reports urgent need for 20 Medical Kits and 30L Water.", "ALERT");
+            orchestrator.updateAllocationUI();
+            
+            // Automatically allocate if possible
+            setTimeout(() => {
+                orchestrator.allocateResources();
+            }, 1000);
+        }
+
+        function resetSimulation() {
+            cancelAnimationFrame(animationFrameId);
+            zones = zones.filter(z => z.id === 'Sector 4' || z.id === 'Sector 7');
+            orchestrator.init();
+            animate();
+        }
+
+        orchestrator.init();
+        animate();
+    </script>
+</body>
+</html>
